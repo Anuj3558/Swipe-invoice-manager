@@ -6,6 +6,7 @@ import DashboardPage from './components/dashboard/Da';
 
 function App() {
   return (
+    
     <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />

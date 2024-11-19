@@ -188,7 +188,7 @@ function UploadPage() {
           >
             <div
               className="h-full bg-blue-500 rounded transition-all duration-500 ease-out"
-              style={{ width: ${progress}% }}
+              style={{ width: `${progress}%` }}
             />
           </div>
           <p className="text-center text-sm text-gray-400 mt-2">
