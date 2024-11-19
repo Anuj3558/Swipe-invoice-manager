@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { BarChart3, DollarSign, ShoppingCart, Users, Upload, AlertTriangle, CheckCircle } from 'lucide-react'
+import { BarChart3, DollarSign, ShoppingCart, Users, FileSpreadsheet, FileText, UserCircle } from 'lucide-react'
+import axios from 'axios'
 
-// Sample data (unchanged)
+// Dummy sample data (can be removed in production)
 const revenueData = [
   { month: 'Jan', revenue: 5000 },
   { month: 'Feb', revenue: 7000 },
@@ -11,27 +12,6 @@ const revenueData = [
   { month: 'Apr', revenue: 8000 },
   { month: 'May', revenue: 9000 },
   { month: 'Jun', revenue: 11000 },
-]
-
-const invoicesData = [
-  { id: 'INV001', customer: 'Acme Corp', amount: 1000, status: 'Paid' },
-  { id: 'INV002', customer: 'Globex Inc', amount: 1500, status: 'Pending' },
-  { id: 'INV003', customer: 'Initech', amount: 800, status: 'Paid' },
-  { id: 'INV004', customer: 'Umbrella Corp', amount: 2000, status: 'Overdue' },
-]
-
-const productsData = [
-  { id: 'P001', name: 'Widget A', price: 50, stock: 100 },
-  { id: 'P002', name: 'Gadget B', price: 75, stock: 50 },
-  { id: 'P003', name: 'Doohickey C', price: 30, stock: 200 },
-  { id: 'P004', name: 'Thingamajig D', price: 100, stock: 25 },
-]
-
-const customersData = [
-  { id: 'C001', name: 'John Doe', email: 'john@example.com', totalPurchases: 5000 },
-  { id: 'C002', name: 'Jane Smith', email: 'jane@example.com', totalPurchases: 7500 },
-  { id: 'C003', name: 'Bob Johnson', email: 'bob@example.com', totalPurchases: 3000 },
-  { id: 'C004', name: 'Alice Brown', email: 'alice@example.com', totalPurchases: 6000 },
 ]
 
 function Card({ children, className }) {
@@ -91,6 +71,14 @@ function Dashboard() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
   const [activeTab, setActiveTab] = useState('invoices')
+  
+  // New state for extracted data
+  const [extractedData, setExtractedData] = useState({
+    invoices: [],
+    products: [],
+    customers: [],
+    rawData: []
+  })
 
   const handleFileChange = (event) => {
     if (event.target.files) {
@@ -116,37 +104,110 @@ function Dashboard() {
     return true
   }
 
-  const simulateExtraction = async () => {
-    setExtracting(true)
-    for (let i = 0; i <= 100; i += 10) {
-      setProgress(i)
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-    setExtracting(false)
-    setSuccess('Data extracted successfully!')
-  }
-
   const handleUpload = async () => {
     if (files.length === 0) {
-      setError('Please select files to upload')
-      return
+      setError("Please select files to upload");
+      return;
     }
 
     if (!validateFiles(files)) {
-      return
+      return;
     }
 
-    setUploading(true)
-    setError(null)
-    setSuccess(null)
+    setUploading(true);
+    setError(null);
+    setSuccess(null);
 
-    // Simulating file upload
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setUploading(false)
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
 
-    // Simulating AI extraction process
-    await simulateExtraction()
-  }
+    try {
+      const response = await axios.post(
+        "http://localhost:5000/api/upload/files",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              setProgress(
+                Math.round((progressEvent.loaded * 100) / progressEvent.total)
+              );
+            }
+          },
+        }
+      );
+console.log(response)
+      setUploading(false);
+      setExtracting(true);
+
+      // Update extracted data
+      if (response.data.success) {
+        setExtractedData({
+          invoices: response.data.data[0].invoices || [],
+          products: response.data.data[0].products || [],
+          customers: response.data.data[0].customers || [],
+          rawData: response.data.data.rawData || []
+        });
+
+        setSuccess(`Extracted data from ${response.data.filesProcessed} file(s)`);
+        console.log(extractedData)
+        // If there are any processing errors, show them
+        if (response.data.errors) {
+          setError(response.data.errors.map(e => `${e.filename}: ${e.errorMessage}`).join('; '));
+        }
+      }
+
+      setExtracting(false);
+    } catch (err) {
+      setUploading(false);
+      setError(
+        err.response?.data?.message ||
+          "An error occurred during file upload or extraction"
+      );
+    }
+  };
+
+  // Render data table based on active tab
+  const renderDataTable = () => {
+    let headers = [];
+    let data = [];
+
+    switch (activeTab) {
+      case 'invoices':
+        headers = ['ID', 'Customer', 'Amount', 'Status'];
+        data = extractedData.invoices.map(invoice => ({
+          id: invoice.id || 'N/A',
+          customer: invoice.customer || 'N/A',
+          amount: `$${invoice.amount || 0}`,
+          status: invoice.status || 'N/A'
+        }));
+        break;
+      case 'products':
+        headers = ['ID', 'Name', 'Price', 'Stock'];
+        data = extractedData.products.map(product => ({
+          id: product.id || 'N/A',
+          name: product.name || 'N/A',
+          price: `$${product.price || 0}`,
+          stock: product.stock || 0
+        }));
+        break;
+      case 'customers':
+        headers = ['ID', 'Name', 'Email', 'Total Purchases'];
+        data = extractedData.customers.map(customer => ({
+          id: customer.id || 'N/A',
+          name: customer.name || 'N/A',
+          email: customer.email || 'N/A',
+          totalPurchases: `$${customer.totalPurchases || 0}`
+        }));
+        break;
+      default:
+        return null;
+    }
+
+    return <DataTable headers={headers} data={data} />;
+  };
 
   return (
     <motion.div 
@@ -172,25 +233,25 @@ function Dashboard() {
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
             title="Invoices"
-            value="234"
+            value={extractedData.invoices.length.toString()}
             icon={BarChart3}
-            subtext="+12.5% from last month"
+            subtext={`+${extractedData.invoices.length} this month`}
           />
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
             title="Products"
-            value="45"
+            value={extractedData.products.length.toString()}
             icon={ShoppingCart}
-            subtext="+5 new this month"
+            subtext={`+${extractedData.products.length} new`}
           />
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
             title="Customers"
-            value="573"
+            value={extractedData.customers.length.toString()}
             icon={Users}
-            subtext="+18 new this month"
+            subtext={`+${extractedData.customers.length} new`}
           />
         </motion.div>
       </div>
@@ -223,140 +284,79 @@ function Dashboard() {
               id="file-upload"
               disabled={uploading || extracting}
             />
-            <label 
-              htmlFor="file-upload" 
-              className="cursor-pointer block"
-            >
-              <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg mb-2">
-                Drag and drop files here, or click to select files
-              </p>
-              <p className="text-sm text-gray-500">
-                Supports Excel (.xlsx), PDF, and image files (JPEG, PNG)
-              </p>
+            <label htmlFor="file-upload" className="cursor-pointer text-blue-500">
+              Choose files to upload
             </label>
+            {files.length > 0 && <div className="mt-2 text-sm text-gray-600">{files.map(file => <div key={file.name}>{file.name}</div>)}</div>}
           </div>
-
-          {files.length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Selected Files:</h3>
-              <ul className="space-y-2">
-                {files.map((file, index) => (
-                  <li 
-                    key={index} 
-                    className="bg-white p-2 rounded-lg flex justify-between items-center"
-                  >
-                    <span>{file.name}</span>
-                    <span className="text-sm text-gray-500">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {error && <div className="text-red-500 text-sm">{error}</div>}
+          {success && <div className="text-green-500 text-sm">{success}</div>}
+          {uploading ? (
+            <div className="text-blue-500">Uploading...</div>
+          ) : (
+            <button 
+              onClick={handleUpload} 
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition"
+              disabled={extracting || uploading}
+            >
+              Upload Files
+            </button>
           )}
-
-          <button 
-            onClick={handleUpload} 
-            disabled={uploading || extracting || files.length === 0}
-            className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {uploading ? 'Uploading...' : extracting ? 'Extracting Data...' : 'Upload and Extract Data'}
-          </button>
-
-          {(uploading || extracting) && (
-            <div className="mt-4">
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <motion.div 
-                  className="h-full bg-blue-500 rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5 }}
-                />
-              </div>
-              <p className="text-center text-sm text-gray-500 mt-2">
-                {uploading ? 'Uploading files...' : 'Extracting data with AI...'}
-              </p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-              <AlertTriangle className="inline-block mr-2" />
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
-              <CheckCircle className="inline-block mr-2" />
-              <span className="block sm:inline">{success}</span>
+          {extracting && <div className="text-blue-500">Extracting data...</div>}
+          {progress > 0 && progress < 100 && (
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="bg-blue-500 h-2.5 rounded-full" style={{ width: `${progress}%` }}></div>
             </div>
           )}
         </div>
       </Card>
 
-      <Card>
-        <div className="flex space-x-4 mb-4">
-          <button
-            className={`px-4 py-2 rounded-md ${activeTab === 'invoices' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setActiveTab('invoices')}
-          >
-            Invoices
-          </button>
-          <button
-            className={`px-4 py-2 rounded-md ${activeTab === 'products' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setActiveTab('products')}
-          >
-            Products
-          </button>
-          <button
-            className={`px-4 py-2 rounded-md ${activeTab === 'customers' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`}
-            onClick={() => setActiveTab('customers')}
-          >
-            Customers
-          </button>
-        </div>
-
-        {activeTab === 'invoices' && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Invoices</h2>
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">Create Invoice</button>
-            </div>
-            <DataTable
-              headers={['Invoice ID', 'Customer', 'Amount', 'Status']}
-              data={invoicesData}
-            />
+      {/* Extracted Data Section */}
+      {extractedData.invoices.length > 0 || 
+       extractedData.products.length > 0 || 
+       extractedData.customers.length > 0 ? (
+        <Card>
+          <h2 className="text-xl font-bold mb-4">Extracted Data</h2>
+          <div className="flex space-x-4 mb-4">
+            {[
+              { 
+                key: 'invoices', 
+                label: 'Invoices', 
+                icon: FileText,
+                count: extractedData.invoices.length 
+              },
+              { 
+                key: 'products', 
+                label: 'Products', 
+                icon: FileSpreadsheet,
+                count: extractedData.products.length 
+              },
+              { 
+                key: 'customers', 
+                label: 'Customers', 
+                icon: UserCircle,
+                count: extractedData.customers.length 
+              }
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`
+                  flex items-center space-x-2 px-4 py-2 rounded-md
+                  ${activeTab === tab.key 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-100 text-gray-800'}
+                `}
+              >
+                <tab.icon className="h-5 w-5" />
+                <span>{tab.label} ({tab.count})</span>
+              </button>
+            ))}
           </div>
-        )}
-
-        {activeTab === 'products' && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Products</h2>
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">Add Product</button>
-            </div>
-            <DataTable
-              headers={['Product ID', 'Name', 'Price', 'Stock']}
-              data={productsData}
-            />
-          </div>
-        )}
-
-        {activeTab === 'customers' && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Customers</h2>
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">Add Customer</button>
-            </div>
-            <DataTable
-              headers={['Customer ID', 'Name', 'Email', 'Total Purchases']}
-              data={customersData}
-            />
-          </div>
-        )}
-      </Card>
+          
+          {renderDataTable()}
+        </Card>
+      ) : null}
     </motion.div>
   )
 }
