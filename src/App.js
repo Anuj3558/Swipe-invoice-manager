@@ -1,16 +1,15 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
-
-import UploadPage from './components/dashboard/dashboard';
+import UploadPage from './components/dashboard/UploadPage';
+import DashboardPage from './components/dashboard/Da';
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/upload" element={<UploadPage />} />
-        
+        <Route path="/dashboard" element={<DashboardPage />} />
       </Routes>
     </Router>
   );
