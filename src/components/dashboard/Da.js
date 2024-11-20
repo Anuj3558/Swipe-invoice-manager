@@ -20,16 +20,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Dummy sample data (can be removed in production)
-const revenueData = [
-  { month: "Jan", revenue: 5000 },
-  { month: "Feb", revenue: 7000 },
-  { month: "Mar", revenue: 6000 },
-  { month: "Apr", revenue: 8000 },
-  { month: "May", revenue: 9000 },
-  { month: "Jun", revenue: 11000 },
-];
-
 // Card Component
 function Card({ children, className }) {
   return (
@@ -101,9 +91,7 @@ function Dashboard() {
 
   // Updated state for extracted data
   const [extractedData, setExtractedData] = useState({
-    customers: [],
-    invoices: [],
-    products: [],
+    originalData: [],
     processedFiles: [],
   });
 
@@ -121,8 +109,6 @@ function Dashboard() {
     const allowedTypes = [
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "application/pdf",
-      "image/jpeg",
-      "image/png",
     ];
     const invalidFiles = files.filter(
       (file) => !allowedTypes.includes(file.type)
@@ -137,6 +123,38 @@ function Dashboard() {
       return false;
     }
     return true;
+  };
+
+  // Process response data
+  const processResponseData = (response) => {
+    if (!response.data?.data?.[0]?.extractedData?.originalData) {
+      throw new Error("Invalid response format");
+    }
+
+    const originalData = response.data.data[0].extractedData.originalData;
+
+    // Filter out summary rows and process data
+    const transactionData = originalData.filter(
+      (item) =>
+        item["Serial Number"] &&
+        item["Serial Number"] !== "Totals" &&
+        ![
+          "CGST",
+          "SGST",
+          "IGST",
+          "ITEM NET AMOUNT",
+          "ITEM TOTAL AMOUNT",
+          "QTY",
+          "EXTRA DISCOUNT",
+          "ROUND OFF AMOUNT",
+          "CESS",
+        ].includes(item.Qty)
+    );
+
+    return {
+      originalData: transactionData,
+      processedFiles: [response.data.data[0].filename],
+    };
   };
 
   // File Upload Handler
@@ -159,7 +177,7 @@ function Dashboard() {
 
     try {
       const response = await axios.post(
-        "https://invoice-backend-ypxy.onrender.com/api/upload/files",
+        "http://localhost:5000/api/upload/files",
         formData,
         {
           headers: {
@@ -178,34 +196,11 @@ function Dashboard() {
       setUploading(false);
       setExtracting(true);
 
-      // Updated data extraction logic
       if (response.data.success) {
-        const newExtractedData = {
-          customers: [],
-          invoices: [],
-          products: [],
-          processedFiles: [],
-        };
-
-        // Process nested data structure
-        response.data.data.forEach((fileData) => {
-          if (fileData.extractedData) {
-            newExtractedData.customers.push(
-              ...(fileData.extractedData.customers || [])
-            );
-            newExtractedData.invoices.push(
-              ...(fileData.extractedData.invoices || [])
-            );
-            newExtractedData.products.push(
-              ...(fileData.extractedData.products || [])
-            );
-            newExtractedData.processedFiles.push(fileData.filename);
-          }
-        });
-
-        setExtractedData(newExtractedData);
+        const processedData = processResponseData(response);
+        setExtractedData(processedData);
         setSuccess(
-          `Extracted data from ${response.data.filesProcessed} file(s)`
+          `Successfully processed ${processedData.processedFiles.length} file(s)`
         );
       }
 
@@ -221,64 +216,50 @@ function Dashboard() {
 
   // Render data table based on active tab
   const renderDataTable = () => {
-    let headers = [];
-    let data = [];
+    const headers = [
+      "Serial Number",
+      "Invoice Date",
+      "Product Name",
+      "Quantity",
+      "Item Total Amount",
+    ];
 
-    switch (activeTab) {
-      case "invoices":
-        headers = [
-          "Serial Number",
-          "Customer",
-          "Product",
-          "Date",
-          "Quantity",
-          "Total Amount",
-          "Tax",
-        ];
-        data = extractedData.invoices.map((invoice) => ({
-          serialNumber: invoice.serialNumber || "N/A",
-          customerName: invoice.customerName || "N/A",
-          productName: invoice.productName || "N/A",
-          date: invoice.date || "N/A",
-          quantity: invoice.quantity || 0,
-          totalAmount: `₹${invoice.totalAmount?.toLocaleString() || 0}`,
-          tax: `${invoice.tax || 0}%`,
-        }));
-        break;
-      case "products":
-        headers = ["Name", "Unit Price", "Price with Tax", "Quantity", "Tax"];
-        data = extractedData.products.map((product) => ({
-          name: product.name || "N/A",
-          unitPrice: `₹${product.unitPrice?.toLocaleString() || 0}`,
-          priceWithTax: `₹${product.priceWithTax?.toLocaleString() || 0}`,
-          quantity: product.quantity || 0,
-          tax: `${product.tax || 0}%`,
-        }));
-        break;
-      case "customers":
-        headers = ["Name", "Phone Number", "Address", "Total Purchase Amount"];
-        data = extractedData.customers.map((customer) => ({
-          customerName: customer.customerName || "N/A",
-          phoneNumber: customer.phoneNumber || "N/A",
-          address: customer.address || "N/A",
-          totalPurchaseAmount: `₹${
-            customer.totalPurchaseAmount?.toLocaleString() || 0
-          }`,
-        }));
-        break;
-      default:
-        return null;
-    }
+    const data = extractedData.originalData.map((item) => ({
+      serialNumber: item["Serial Number"] || "N/A",
+      invoiceDate: item["Invoice Date"] || "N/A",
+      productName: item["Product Name"] || "N/A",
+      quantity: item["Qty"] || "0",
+      totalAmount: item["Item Total Amount"] || "0",
+    }));
 
     return <DataTable headers={headers} data={data} />;
   };
+
+  // Calculate statistics for dashboard
+  const calculateStats = () => {
+    const data = extractedData.originalData;
+    return {
+      totalRevenue: data.reduce(
+        (sum, item) => sum + parseFloat(item["Item Total Amount"] || 0),
+        0
+      ),
+      totalInvoices: new Set(data.map((item) => item["Serial Number"])).size,
+      totalProducts: new Set(data.map((item) => item["Product Name"])).size,
+      totalQuantity: data.reduce(
+        (sum, item) => sum + parseFloat(item["Qty"] || 0),
+        0
+      ),
+    };
+  };
+
+  const stats = calculateStats();
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="container mx-auto p-6 space-y-8 "
+      className="container mx-auto p-6 space-y-8"
     >
       <header className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
@@ -291,40 +272,35 @@ function Dashboard() {
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
             title="Total Revenue"
-            value={`₹${extractedData.invoices
-              .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
-              .toLocaleString()}`}
+            value={`₹${stats.totalRevenue.toLocaleString()}`}
             icon={DollarSign}
-            subtext={`${extractedData.invoices.length} invoices`}
+            subtext={`${stats.totalInvoices} invoices`}
           />
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
-            title="Invoices"
-            value={extractedData.invoices.length.toString()}
+            title="Total Invoices"
+            value={stats.totalInvoices.toString()}
             icon={BarChart3}
             subtext={`${extractedData.processedFiles.length} files processed`}
           />
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
-            title="Products"
-            value={extractedData.products.length.toString()}
+            title="Unique Products"
+            value={stats.totalProducts.toString()}
             icon={ShoppingCart}
-            subtext={`${extractedData.products.reduce(
-              (sum, prod) => sum + (prod.quantity || 0),
-              0
-            )} total quantity`}
+            subtext={`${stats.totalQuantity} total quantity`}
           />
         </motion.div>
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <StatCard
-            title="Customers"
-            value={extractedData.customers.length.toString()}
+            title="Average Transaction"
+            value={`₹${(
+              stats.totalRevenue / stats.totalInvoices || 0
+            ).toLocaleString()}`}
             icon={Users}
-            subtext={`Total Purchase: ₹${extractedData.customers
-              .reduce((sum, cust) => sum + (cust.totalPurchaseAmount || 0), 0)
-              .toLocaleString()}`}
+            subtext={`${extractedData.originalData.length} transactions`}
           />
         </motion.div>
       </div>
@@ -332,7 +308,7 @@ function Dashboard() {
       {/* File Upload Section */}
       <Card>
         <h2 className="text-xl font-bold mb-4">
-          Upload Files for AI Extraction
+          Upload Files for Data Processing
         </h2>
         <div className="space-y-4">
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors duration-300">
@@ -340,7 +316,7 @@ function Dashboard() {
               type="file"
               multiple
               onChange={handleFileChange}
-              accept=".xlsx,.pdf,.jpg,.jpeg,.png"
+              accept=".xlsx,.pdf"
               className="hidden"
               id="file-upload"
               disabled={uploading || extracting}
@@ -373,7 +349,7 @@ function Dashboard() {
             </button>
           )}
           {extracting && (
-            <div className="text-blue-500">Extracting data...</div>
+            <div className="text-blue-500">Processing data...</div>
           )}
           {progress > 0 && progress < 100 && (
             <div className="w-full bg-gray-200 rounded-full h-2.5">
@@ -387,55 +363,12 @@ function Dashboard() {
       </Card>
 
       {/* Extracted Data Section */}
-      {extractedData.invoices.length > 0 ||
-      extractedData.products.length > 0 ||
-      extractedData.customers.length > 0 ? (
+      {extractedData.originalData.length > 0 && (
         <Card>
-          <h2 className="text-xl font-bold mb-4">Extracted Data</h2>
-          <div className="flex space-x-4 mb-4">
-            {[
-              {
-                key: "invoices",
-                label: "Invoices",
-                icon: FileText,
-                count: extractedData.invoices.length,
-              },
-              {
-                key: "products",
-                label: "Products",
-                icon: FileSpreadsheet,
-                count: extractedData.products.length,
-              },
-              {
-                key: "customers",
-                label: "Customers",
-                icon: UserCircle,
-                count: extractedData.customers.length,
-              },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`
-                  flex items-center space-x-2 px-4 py-2 rounded-md
-                  ${
-                    activeTab === tab.key
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-100 text-gray-800"
-                  }
-                `}
-              >
-                <tab.icon className="h-5 w-5" />
-                <span>
-                  {tab.label} ({tab.count})
-                </span>
-              </button>
-            ))}
-          </div>
-
+          <h2 className="text-xl font-bold mb-4">Processed Data</h2>
           {renderDataTable()}
         </Card>
-      ) : null}
+      )}
     </motion.div>
   );
 }
