@@ -1,14 +1,8 @@
-// src/redux/store.js
+import { configureStore } from '@reduxjs/toolkit';
+import dashboardReducer from './dashboardSlice';
 
-import rootReducer from "./reducer";
-import { createStore, applyMiddleware } from "redux";
-import { composeWithDevTools } from "redux-devtools-extension";
-import { thunk } from "redux-thunk";
-
-// Create store with middleware and dev tools
-const store = createStore(
-  rootReducer,
-  composeWithDevTools(applyMiddleware(thunk))
-);
-
-export default store;
+export const store = configureStore({
+  reducer: {
+    dashboard: dashboardReducer,
+  },
+});
