@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 
-import DashboardPage from './components/dashboard/Da';
+import DashboardPage from './components/dashboard/Dashboard';
 
 function App() {
   return (
